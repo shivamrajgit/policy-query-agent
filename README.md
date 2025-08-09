@@ -12,6 +12,17 @@ A FastAPI-based service that uses AI to automatically answer questions about ins
 - **Authentication**: Bearer token authentication support
 - **Health Monitoring**: Built-in health check endpoints
 
+## How It Works
+
+1. **Document Loading**: Downloads PDF documents from provided URLs
+2. **Text Processing**: Extracts and chunks text content using RecursiveCharacterTextSplitter
+3. **Vectorization**: Creates FAISS vector store using Google's embedding model
+4. **Query Processing**: Uses LangGraph workflow with three nodes:
+   - **Query Refiner**: Optimizes questions for better search results
+   - **Context Retriever**: Finds relevant document sections using similarity search
+   - **Answering LLM**: Generates answers based on retrieved context
+5. **Parallel Processing**: Distributes questions across multiple API keys for faster processing
+
 ## Project Structure
 
 ```
@@ -86,22 +97,6 @@ You can use the provided `request.json` file as a sample request:
 }
 ```
 
-#### PowerShell Example
-
-```powershell
-$requestBody = Get-Content -Path "request.json" -Raw
-Invoke-RestMethod -Uri "http://localhost:8000/hackrx/run" -Method Post -ContentType "application/json" -Headers @{"Authorization"="Bearer your_api_key"} -Body $requestBody
-```
-
-#### cURL Example
-
-```bash
-curl -X POST "http://localhost:8000/hackrx/run" \
-     -H "Content-Type: application/json" \
-     -H "Authorization: Bearer your_api_key" \
-     -d @request.json
-```
-
 ### Response Format
 
 ```json
@@ -137,30 +132,6 @@ Health check endpoint to verify service status.
 
 Root endpoint with API information and links.
 
-## How It Works
-
-1. **Document Loading**: Downloads PDF documents from provided URLs
-2. **Text Processing**: Extracts and chunks text content using RecursiveCharacterTextSplitter
-3. **Vectorization**: Creates FAISS vector store using Google's embedding model
-4. **Query Processing**: Uses LangGraph workflow with three nodes:
-   - **Query Refiner**: Optimizes questions for better search results
-   - **Context Retriever**: Finds relevant document sections using similarity search
-   - **Answering LLM**: Generates answers based on retrieved context
-5. **Parallel Processing**: Distributes questions across multiple API keys for faster processing
-
-## Key Components
-
-### PolicyQueryService (`src/core/service.py`)
-Main orchestrator that coordinates document processing and question answering.
-
-### PolicyQueryWorkflow (`src/core/workflow.py`)
-LangGraph-based AI workflow implementing the three-stage question answering process.
-
-### DocumentProcessor (`src/utils/document_loader.py`)
-Handles PDF document downloading, processing, and vector store creation.
-
-### API Models (`src/api/models.py`)
-Pydantic models for request/response validation and documentation.
 
 ## Configuration
 
@@ -181,20 +152,6 @@ Pydantic models for request/response validation and documentation.
 - **`request.json`**: Contains a sample request with an insurance policy URL and typical questions
 - **`Proposed_app.txt`**: Provides detailed API documentation, request/response examples, and PowerShell usage commands
 
-## Error Handling
-
-The API includes comprehensive error handling:
-- **400 Bad Request**: Invalid input data
-- **401 Unauthorized**: Invalid or missing API key
-- **500 Internal Server Error**: Processing errors with detailed messages
-
-## Performance Features
-
-- **Multi-API Key Support**: Distributes load across multiple Google AI API keys
-- **Parallel Question Processing**: Processes multiple questions simultaneously
-- **Efficient Vector Search**: FAISS-based similarity search for fast document retrieval
-- **Optimized Chunking**: Configurable text splitting for optimal context retrieval
-
 ## Development
 
 ### Running in Development Mode
@@ -214,7 +171,3 @@ Use the provided `request.json` file to test the API functionality. The sample i
 - **FAISS**: Vector similarity search
 - **PyPDF**: PDF document processing
 - **Uvicorn**: ASGI server for FastAPI
-
-## License
-
-This project is for educational and demonstration purposes. Ensure compliance with Google AI API terms of service and any relevant data privacy regulations when processing policy documents.
