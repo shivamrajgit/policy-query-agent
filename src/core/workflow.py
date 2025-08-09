@@ -15,7 +15,7 @@ from langgraph.graph.message import add_messages
 class PolicyQueryWorkflow:
     """Handles the LangGraph workflow for policy question answering."""
     
-    def __init__(self, api_keys: List[str] = None, model_name: str = "gemini-2.5-flash", model_name_lite: str = "gemini-2.5-flash-lite"):
+    def __init__(self, api_keys: List[str] = None, model_name: str = "gemini-2.5-flash"):
         # Load environment variables
         load_dotenv()
         
@@ -40,11 +40,9 @@ class PolicyQueryWorkflow:
         if api_keys is None:
             # Fallback to single model if no API keys provided
             self.models = [ChatGoogleGenerativeAI(model=model_name)]
-            self.models_lite = [ChatGoogleGenerativeAI(model=model_name_lite)]
         else:
             # Create model instances for each API key
             self.models = []
-            self.models_lite = []
             
             for i, api_key in enumerate(api_keys):
                 # Temporarily set environment variable for this specific model
@@ -53,9 +51,7 @@ class PolicyQueryWorkflow:
                 
                 try:
                     model = ChatGoogleGenerativeAI(model=model_name)
-                    model_lite = ChatGoogleGenerativeAI(model=model_name_lite)
                     self.models.append(model)
-                    self.models_lite.append(model_lite)
                     print(f"Created model {i+1} with API key: {api_key[:10]}...{api_key[-4:]}")
                 finally:
                     # Restore original key or remove if it wasn't set
@@ -116,8 +112,7 @@ class PolicyQueryWorkflow:
             # Initialize state with the question
             initial_state = {
                 "messages": [HumanMessage(content=question)],
-                "refined_query": "",
-                "retrieved_context": ""
+                "retrieved_text": ""
             }
             
             # Run the workflow with the assigned graph
@@ -142,86 +137,58 @@ class PolicyQueryWorkflow:
         workflow = StateGraph(State)
         
         # Add nodes
-        workflow.add_node("query_refiner", lambda state: self._query_refiner(state, model_idx))
         workflow.add_node("context_retriever", self._context_retriever)
         workflow.add_node("answering_llm", lambda state: self._answering_llm(state, model_idx))
         
         # Define the flow
-        workflow.set_entry_point("query_refiner")
-        workflow.add_edge("query_refiner", "context_retriever")
+        workflow.set_entry_point("context_retriever")
         workflow.add_edge("context_retriever", "answering_llm")
         workflow.add_edge("answering_llm", END)
         
         return workflow.compile()
     
-    def _query_refiner(self, state: 'State', model_idx: int) -> 'State':
-        """Node 1: Refine the user's query for better policy search."""
+    def _context_retriever(self, state: 'State') -> 'State':
+        """Node 1: Retrieve relevant context from policy documents using the original query."""
         messages = state["messages"]
         original_query = messages[-1].content if messages else ""
         
-        system_message = SystemMessage(content="""
-        You are a query refinement assistant for an insurance policy query assistant.
-        Your goal is to refine the given query so it is more precise for the assistant to understand user's intent.
-        Refinement rules:
-            -Preserve original meaning — do not add, remove, or replace key medical, financial, or policy terms.
-            -Clarify, not alter — you may expand abbreviations, fix grammar, or add necessary context from the query itself, but never introduce new procedures, conditions, or assumptions that are not explicitly stated.
-            -Enhance search relevance — identify important insurance-related keywords (e.g., coverage, claim eligibility, exclusions, pre-authorization) and incorporate them only if they are directly implied or stated.
-            -Remove vague or extraneous language to make the query concise and unambiguous.
-        Return only the refined query text, nothing else.
-        """)
-        
-        user_message = HumanMessage(content=f"Original query: {original_query}")
-        
-        response = self.models_lite[model_idx].invoke([system_message, user_message])
-        refined = (response.content or original_query).strip()
-        
-        return {
-            **state,
-            "refined_query": refined,
-            "messages": state["messages"] + [AIMessage(content=f"Refined query: {refined}")]
-        }
-    
-    def _context_retriever(self, state: 'State') -> 'State':
-        """Node 2: Retrieve relevant context from policy documents."""
-        refined_query = state.get("refined_query", "")
-        
         if self.vector_store is None:
-            context = "Vector store not loaded. Please load documents first."
+            retrieved_text = "Vector store not loaded. Please load documents first."
         else:
             try:
-                docs = self.vector_store.similarity_search(refined_query, k=5)
+                docs = self.vector_store.similarity_search(original_query, k=5)
                 formatted = []
                 for i, d in enumerate(docs, 1):
                     src = d.metadata.get("source_url") or d.metadata.get("source_file") or "unknown"
                     formatted.append(f"Clause {i} (Source: {src}):\n{d.page_content}")
-                context = "\n\n".join(formatted) if formatted else "No relevant clauses found."
+                retrieved_text = "\n\n".join(formatted) if formatted else "No relevant clauses found."
             except Exception as e:
-                context = f"Error retrieving clauses: {e}"
+                retrieved_text = f"Error retrieving clauses: {e}"
         
         return {
             **state,
-            "retrieved_context": context
+            "retrieved_text": retrieved_text
         }
     
     def _answering_llm(self, state: 'State', model_idx: int) -> 'State':
-        """Node 3: LLM that answers using the retrieved context."""
-        refined_query = state.get("refined_query", "")
-        retrieved_context = state.get("retrieved_context", "")
+        """Node 2: LLM that answers using the retrieved context."""
+        original_query = state["messages"][0].content if state["messages"] else ""
+        retrieved_text = state.get("retrieved_text", "")
         
         instructions = f"""
         You are an expert AI assistant for insurance policy analysis. Answer the user's question using only the provided context from policy documents.
         
         Context:
-        {retrieved_context}
+        {retrieved_text}
         
         Instructions:
         - Base your answer strictly on the context; no outside facts or assumptions.
-        - Do not elaborate or add, provide the answer citing policy terms and content and keep it consise and crisp (1-2 sentences)
+        - Do not elaborate or add, provide the answer using policy terms and context also keep it consise and crisp (1-2 sentences)
         - If the answer is missing, say: "Not specified in the provided policy context."
         """
         
         system_message = SystemMessage(content=instructions)
-        user_message = HumanMessage(content=f"Question: {refined_query}")
+        user_message = HumanMessage(content=f"Question: {original_query}")
         
         response = self.models[model_idx].invoke([system_message, user_message])
         
@@ -234,5 +201,4 @@ class PolicyQueryWorkflow:
 class State(TypedDict):
     """State definition for the LangGraph workflow."""
     messages: Annotated[List[BaseMessage], add_messages]
-    refined_query: str
-    retrieved_context: str
+    retrieved_text: str
