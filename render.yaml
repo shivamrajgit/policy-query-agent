@@ -3,7 +3,7 @@ services:
     name: policy-query-api
     env: python
     plan: free
-    buildCommand: "pip install -r requirements.txt"
+    buildCommand: "pip install --upgrade pip && pip install -r requirements.txt"
     startCommand: "gunicorn --config gunicorn.conf.py main:app"
     envVars:
       - key: PYTHON_VERSION
@@ -16,3 +16,5 @@ services:
         sync: false  # Set this in Render dashboard
       - key: ALLOWED_ORIGINS
         value: "*"  # Update this with your actual frontend domains
+      - key: CHROMA_DB_IMPL
+        value: "duckdb+parquet"  # Optimized for serverless deployment

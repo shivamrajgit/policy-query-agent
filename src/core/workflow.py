@@ -7,7 +7,7 @@ from concurrent.futures import ThreadPoolExecutor, as_completed
 from dotenv import load_dotenv
 from langchain_google_genai import ChatGoogleGenerativeAI
 from langchain_core.messages import HumanMessage, AIMessage, BaseMessage, SystemMessage
-from langchain_community.vectorstores import FAISS
+from langchain_community.vectorstores import Chroma
 from langgraph.graph import StateGraph, END
 from langgraph.graph.message import add_messages
 
@@ -68,7 +68,7 @@ class PolicyQueryWorkflow:
         self.vector_store = None
         self.graphs = None
     
-    def set_vector_store(self, vector_store: FAISS):
+    def set_vector_store(self, vector_store: Chroma):
         """Set the vector store for document retrieval."""
         self.vector_store = vector_store
         # Recreate the graphs with the new vector store

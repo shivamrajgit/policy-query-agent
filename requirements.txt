@@ -7,6 +7,6 @@ langchain==0.3.27
 langchain-community==0.3.27
 langchain-google-genai==2.1.9
 langgraph==0.2.48
-faiss-cpu==1.7.4
+chromadb==0.4.22
 pypdf==3.17.4
 requests==2.31.0

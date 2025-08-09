@@ -1,7 +1,7 @@
 """Main service for policy question answering."""
 
 from typing import List
-from langchain_community.vectorstores import FAISS
+from langchain_community.vectorstores import Chroma
 from src.utils.document_loader import DocumentProcessor
 from .workflow import PolicyQueryWorkflow
 

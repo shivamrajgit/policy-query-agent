@@ -6,7 +6,7 @@ A FastAPI-based service that uses AI to automatically answer questions about ins
 
 - **Document Processing**: Automatically downloads and processes PDF documents from URLs
 - **AI-Powered Q&A**: Uses Google Generative AI models (Gemini 2.0) for intelligent question answering
-- **Vector Search**: FAISS-based similarity search for relevant content retrieval
+- **Vector Search**: ChromaDB-based similarity search for relevant content retrieval
 - **Parallel Processing**: Multi-threaded question processing with multiple API keys for improved performance
 - **RESTful API**: Clean FastAPI interface with automatic documentation
 - **Authentication**: Bearer token authentication support
@@ -16,7 +16,7 @@ A FastAPI-based service that uses AI to automatically answer questions about ins
 
 1. **Document Loading**: Downloads PDF documents from provided URLs
 2. **Text Processing**: Extracts and chunks text content using RecursiveCharacterTextSplitter
-3. **Vectorization**: Creates FAISS vector store using Google's embedding model
+3. **Vectorization**: Creates ChromaDB vector store using Google's embedding model
 4. **Query Processing**: Uses LangGraph workflow with three nodes:
    - **Query Refiner**: Optimizes questions for better search results
    - **Context Retriever**: Finds relevant document sections using similarity search
@@ -161,6 +161,6 @@ Use the provided `request.json` file to test the API functionality. The sample i
 - **LangChain**: Framework for LLM applications
 - **LangGraph**: Workflow orchestration for AI applications
 - **Google Generative AI**: AI models for embeddings and text generation
-- **FAISS**: Vector similarity search
+- **ChromaDB**: Vector similarity search
 - **PyPDF**: PDF document processing
 - **Uvicorn**: ASGI server for FastAPI

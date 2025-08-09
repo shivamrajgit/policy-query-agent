@@ -7,7 +7,7 @@ from typing import List
 from langchain_community.document_loaders import PyPDFLoader
 from langchain.text_splitter import RecursiveCharacterTextSplitter
 from langchain_google_genai import GoogleGenerativeAIEmbeddings
-from langchain_community.vectorstores import FAISS
+from langchain_community.vectorstores import Chroma
 from langchain_core.documents import Document
 
 
@@ -23,9 +23,9 @@ class DocumentProcessor:
             separators=["\n\n", "\n", " ", ""]
         )
     
-    def create_vectorstore_from_urls(self, urls: List[str]) -> FAISS:
+    def create_vectorstore_from_urls(self, urls: List[str]) -> Chroma:
         """
-        Create a FAISS vectorstore from a list of URLs.
+        Create a Chroma vectorstore from a list of URLs.
         Downloads documents from URLs, processes them, and returns a vectorstore.
         """
         all_documents = []
@@ -45,8 +45,12 @@ class DocumentProcessor:
         # Split documents into chunks
         splits = self.text_splitter.split_documents(all_documents)
         
-        # Create vectorstore
-        vectorstore = FAISS.from_documents(splits, self.embeddings)
+        # Create vectorstore with Chroma (in-memory for deployment)
+        vectorstore = Chroma.from_documents(
+            documents=splits, 
+            embedding=self.embeddings,
+            collection_name="policy_documents"
+        )
         print(f"Created vectorstore with {len(splits)} document chunks from {len(urls)} URLs")
         
         return vectorstore
