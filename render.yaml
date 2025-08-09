@@ -1,0 +1,18 @@
+services:
+  - type: web
+    name: policy-query-api
+    env: python
+    plan: free
+    buildCommand: "pip install -r requirements.txt"
+    startCommand: "gunicorn --config gunicorn.conf.py main:app"
+    envVars:
+      - key: PYTHON_VERSION
+        value: 3.11.0
+      - key: WEB_CONCURRENCY
+        value: 1
+      - key: API_KEY
+        sync: false  # Set this in Render dashboard
+      - key: GOOGLE_API_KEY
+        sync: false  # Set this in Render dashboard
+      - key: ALLOWED_ORIGINS
+        value: "*"  # Update this with your actual frontend domains
