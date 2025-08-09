@@ -15,7 +15,7 @@ from langgraph.graph.message import add_messages
 class PolicyQueryWorkflow:
     """Handles the LangGraph workflow for policy question answering."""
     
-    def __init__(self, api_keys: List[str] = None, model_name: str = "gemini-2.0-flash", model_name_lite: str = "gemini-2.0-flash-lite"):
+    def __init__(self, api_keys: List[str] = None, model_name: str = "gemini-2.5-flash", model_name_lite: str = "gemini-2.5-flash-lite"):
         # Load environment variables
         load_dotenv()
         
@@ -216,8 +216,7 @@ class PolicyQueryWorkflow:
         
         Instructions:
         - Base your answer strictly on the context; no outside facts or assumptions.
-        - Do not elaborate; provide only the direct answer citing policy terms and content.
-        - Be concise and precise.
+        - Do not elaborate or add, provide the answer citing policy terms and content and keep it consise and crisp (1-2 sentences)
         - If the answer is missing, say: "Not specified in the provided policy context."
         """
         
