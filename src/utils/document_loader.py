@@ -1,27 +1,14 @@
-"""Document loading and processing utilities.
-
-Performance / robustness enhancements:
- - Concurrent downloading & parsing of PDFs (thread pool)
- - Per-URL timeout & aggregate cap to avoid blocking Gunicorn worker past timeout
- - Basic logging with progress
- - Skips oversized / empty downloads safely
-"""
+"""Document loading and processing utilities."""
 
 import os
 import tempfile
 import requests
-import logging
-from concurrent.futures import ThreadPoolExecutor, as_completed
 from typing import List
 from langchain_community.document_loaders import PyPDFLoader
 from langchain.text_splitter import RecursiveCharacterTextSplitter
 from langchain_google_genai import GoogleGenerativeAIEmbeddings
-from langchain_community.vectorstores import Chroma
+from langchain_community.vectorstores import FAISS
 from langchain_core.documents import Document
-
-logger = logging.getLogger("document_loader")
-if not logger.handlers:
-    logging.basicConfig(level=logging.INFO)
 
 
 class DocumentProcessor:
@@ -36,75 +23,69 @@ class DocumentProcessor:
             separators=["\n\n", "\n", " ", ""]
         )
     
-    def create_vectorstore_from_urls(self, urls: List[str]) -> Chroma:
-        """Create a Chroma vectorstore from a list of URLs with concurrency."""
-        all_documents: List[Document] = []
-
-        # Limit number of threads to avoid CPU oversubscription on small instances
-        max_workers = min(4, max(1, len(urls)))
-        logger.info("[DocLoader] Fetching %d URLs with %d workers", len(urls), max_workers)
-
-        with ThreadPoolExecutor(max_workers=max_workers) as executor:
-            future_to_url = {executor.submit(self._load_document_from_url, url): url for url in urls}
-            for future in as_completed(future_to_url):
-                url = future_to_url[future]
-                try:
-                    docs = future.result()
-                    if docs:
-                        all_documents.extend(docs)
-                        logger.info("[DocLoader] Loaded %d pages from %s", len(docs), url)
-                    else:
-                        logger.warning("[DocLoader] No pages extracted from %s", url)
-                except Exception as e:
-                    logger.error("[DocLoader] Error processing %s: %s", url, e)
-
+    def create_vectorstore_from_urls(self, urls: List[str]) -> FAISS:
+        """
+        Create a FAISS vectorstore from a list of URLs.
+        Downloads documents from URLs, processes them, and returns a vectorstore.
+        """
+        all_documents = []
+        
+        for url in urls:
+            try:
+                print(f"Processing URL: {url}")
+                documents = self._load_document_from_url(url)
+                all_documents.extend(documents)
+            except Exception as e:
+                print(f"Error processing URL {url}: {e}")
+                continue
+        
         if not all_documents:
             raise ValueError("No documents could be loaded from the provided URLs")
-
+        
         # Split documents into chunks
         splits = self.text_splitter.split_documents(all_documents)
-        logger.info("[DocLoader] Split into %d chunks", len(splits))
-
-        # Create vectorstore with Chroma (in-memory for deployment)
-        vectorstore = Chroma.from_documents(
-            documents=splits,
-            embedding=self.embeddings,
-            collection_name="policy_documents"
-        )
-        logger.info("[DocLoader] Created vectorstore with %d chunks from %d URLs", len(splits), len(urls))
+        
+        # Create vectorstore
+        vectorstore = FAISS.from_documents(splits, self.embeddings)
+        print(f"Created vectorstore with {len(splits)} document chunks from {len(urls)} URLs")
+        
         return vectorstore
     
     def _load_document_from_url(self, url: str) -> List[Document]:
-        """Load a document from a URL (PDF)."""
+        """
+        Load a document from a URL. Currently supports PDF files.
+        Downloads the file temporarily and processes it.
+        """
         try:
-            response = requests.get(url, stream=True, timeout=20)
+            # Download the file
+            response = requests.get(url, stream=True, timeout=30)
             response.raise_for_status()
-
-            # Enforce a max size (e.g., 15 MB) to avoid huge downloads on free tier
-            max_bytes = 15 * 1024 * 1024
-            total = 0
+            
+            # Create a temporary file
             with tempfile.NamedTemporaryFile(delete=False, suffix='.pdf') as temp_file:
                 for chunk in response.iter_content(chunk_size=8192):
-                    if chunk:
-                        total += len(chunk)
-                        if total > max_bytes:
-                            logger.warning("[DocLoader] File from %s exceeded size limit; truncating", url)
-                            break
-                        temp_file.write(chunk)
+                    temp_file.write(chunk)
                 temp_file_path = temp_file.name
-
+            
             try:
+                # Load the document using PyPDFLoader
                 loader = PyPDFLoader(temp_file_path)
                 documents = loader.load()
+                
+                # Add URL metadata to each document
                 for doc in documents:
                     doc.metadata.update({
                         "source_url": url,
                         "file_type": ".pdf"
                     })
+                
                 return documents
+            
             finally:
+                # Clean up the temporary file
                 if os.path.exists(temp_file_path):
                     os.unlink(temp_file_path)
+                    
         except Exception as e:
-            logger.error("[DocLoader] Error loading %s: %s", url, e)
+            print(f"Error loading document from URL {url}: {e}")
             return []

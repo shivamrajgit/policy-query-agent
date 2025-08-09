@@ -2,11 +2,12 @@
 
 from typing import List, TypedDict, Annotated
 import os
+import json
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from dotenv import load_dotenv
 from langchain_google_genai import ChatGoogleGenerativeAI
 from langchain_core.messages import HumanMessage, AIMessage, BaseMessage, SystemMessage
-from langchain_community.vectorstores import Chroma
+from langchain_community.vectorstores import FAISS
 from langgraph.graph import StateGraph, END
 from langgraph.graph.message import add_messages
 
@@ -18,28 +19,23 @@ class PolicyQueryWorkflow:
         # Load environment variables
         load_dotenv()
         
-        # If no API keys provided, try to load from individual environment variables
+        # If no API keys provided, try to load from environment
         if api_keys is None:
-            api_keys = []
-            
-            # Try to load individual API keys from GOOGLE_API_KEY_1, GOOGLE_API_KEY_2, GOOGLE_API_KEY_3
-            for i in range(1, 4):  # Check for up to 3 API keys
-                key_name = f'GOOGLE_API_KEY_{i}'
-                api_key = os.getenv(key_name)
-                if api_key and api_key.strip():
-                    api_keys.append(api_key.strip())
-                    print(f"Loaded API key {i} from {key_name}")
-            
-            # If no individual keys found, try the original GOOGLE_API_KEY
-            if not api_keys:
-                main_key = os.getenv('GOOGLE_API_KEY')
-                if main_key and main_key.strip():
-                    api_keys.append(main_key.strip())
-                    print("Loaded main API key from GOOGLE_API_KEY")
-            
-            if not api_keys:
-                print("No valid API keys found in environment variables")
-                api_keys = None
+            api_keys_str = os.getenv('GOOGLE_API_KEYS')
+            if api_keys_str:
+                try:
+                    parsed_keys = json.loads(api_keys_str)
+                    api_keys = [key for key in parsed_keys if key and key.strip()]
+                    if api_keys:
+                        print(f"Loaded {len(api_keys)} API keys from environment")
+                    else:
+                        print("No valid API keys found in GOOGLE_API_KEYS")
+                        api_keys = None
+                except json.JSONDecodeError as e:
+                    print(f"Error parsing GOOGLE_API_KEYS: {e}")
+                    api_keys = None
+            else:
+                print("GOOGLE_API_KEYS not found in environment")
         
         if api_keys is None:
             # Fallback to single model if no API keys provided
@@ -72,7 +68,7 @@ class PolicyQueryWorkflow:
         self.vector_store = None
         self.graphs = None
     
-    def set_vector_store(self, vector_store: Chroma):
+    def set_vector_store(self, vector_store: FAISS):
         """Set the vector store for document retrieval."""
         self.vector_store = vector_store
         # Recreate the graphs with the new vector store

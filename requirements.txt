@@ -1,42 +1,11 @@
-########################################
-# Web & ASGI
-########################################
-fastapi              # API framework
-uvicorn[standard]    # ASGI server (dev / worker class)
-gunicorn             # Production process manager
-
-########################################
-# Config & multipart (optional file upload readiness)
-########################################
-python-dotenv        # .env loading
-python-multipart     # (FastAPI form/file parsing; currently JSON only but kept)
-
-########################################
-# LangChain & Graph Workflow
-########################################
-langchain            # Core LangChain abstractions
-langchain-community  # Community loaders / vectorstores (Chroma, PyPDFLoader)
-langchain-google-genai  # Google Generative AI integrations (chat + embeddings)
-langgraph            # Workflow orchestration (StateGraph)
-
-########################################
-# Vector store & numerical stack
-########################################
-chromadb             # Chroma vector store backend
-numpy                # Required by embeddings / Chroma
-
-########################################
-# Document processing
-########################################
-pypdf                # PDF parsing backend used by PyPDFLoader
-requests             # Download remote PDFs
-
-########################################
-# (Optional) Explicit dependency sometimes implicitly pulled in by langchain-google-genai
-# Uncomment if deployment environment fails to resolve it automatically.
-# google-generativeai
-
-########################################
-# Notes:
-# - No version pins per request; rely on latest compatible releases.
-# - If reproducibility issues arise, introduce a constraints file or add pins.
+fastapi==0.104.1
+uvicorn[standard]==0.24.0
+python-multipart==0.0.6
+python-dotenv==1.0.0
+langchain==0.3.27
+langchain-community==0.3.27
+langchain-google-genai==2.1.9
+langgraph==0.2.48
+faiss-cpu==1.7.4
+pypdf==3.17.4
+requests==2.31.0
