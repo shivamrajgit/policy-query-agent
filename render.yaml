@@ -12,9 +12,13 @@ services:
         value: 1
       - key: API_KEY
         sync: false  # Set this in Render dashboard
-      - key: GOOGLE_API_KEY
+      - key: GOOGLE_API_KEY_1
         sync: false  # Set this in Render dashboard
+      - key: GOOGLE_API_KEY_2
+        sync: false  # Set this in Render dashboard  
+      - key: GOOGLE_API_KEY_3
+        sync: false  # Set this in Render dashboard
+      - key: GOOGLE_API_KEY
+        sync: false  # Fallback key - Set this in Render dashboard
       - key: ALLOWED_ORIGINS
         value: "*"  # Update this with your actual frontend domains
-      - key: CHROMA_DB_IMPL
-        value: "duckdb+parquet"  # Optimized for serverless deployment
