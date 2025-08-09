@@ -1,0 +1,86 @@
+"""Main service for policy question answering."""
+
+from typing import List
+from langchain_community.vectorstores import FAISS
+from src.utils.document_loader import DocumentProcessor
+from .workflow import PolicyQueryWorkflow
+
+
+class PolicyQueryService:
+    """Main service that coordinates document processing and question answering."""
+    
+    def __init__(self, api_keys: List[str] = None):
+        # Pass api_keys to workflow - if None, workflow will load from .env
+        self.workflow = PolicyQueryWorkflow(api_keys=api_keys)
+        self.document_processor = DocumentProcessor()
+        self._vector_store = None
+    
+    def process_documents_and_answer_questions(self, document_urls: List[str], questions: List[str]) -> List[str]:
+        """
+        Process documents from URLs and answer questions.
+        
+        Args:
+            document_urls: List of URLs to PDF documents
+            questions: List of questions to answer
+            
+        Returns:
+            List of answers corresponding to the questions
+        """
+        if not document_urls:
+            raise ValueError("document_urls must not be empty")
+        
+        if not questions:
+            return []
+        
+        try:
+            # Load and process documents
+            vector_store = self.document_processor.create_vectorstore_from_urls(document_urls)
+            self._vector_store = vector_store
+            
+            # Set up the workflow with the vector store
+            self.workflow.set_vector_store(vector_store)
+            
+            # Answer questions
+            answers = self.workflow.answer_questions(questions)
+            
+            return answers
+            
+        except Exception as e:
+            raise RuntimeError(f"Failed to process documents and answer questions: {e}")
+    
+    def answer_questions_with_existing_documents(self, questions: List[str]) -> List[str]:
+        """
+        Answer questions using previously loaded documents.
+        
+        Args:
+            questions: List of questions to answer
+            
+        Returns:
+            List of answers corresponding to the questions
+        """
+        if self._vector_store is None:
+            raise ValueError("No documents loaded. Please call process_documents_and_answer_questions first.")
+        
+        return self.workflow.answer_questions(questions)
+    
+    def load_documents(self, document_urls: List[str]) -> None:
+        """
+        Load documents from URLs for later use.
+        
+        Args:
+            document_urls: List of URLs to PDF documents
+        """
+        if not document_urls:
+            raise ValueError("document_urls must not be empty")
+        
+        try:
+            vector_store = self.document_processor.create_vectorstore_from_urls(document_urls)
+            self._vector_store = vector_store
+            self.workflow.set_vector_store(vector_store)
+        except Exception as e:
+            raise RuntimeError(f"Failed to load documents: {e}")
+    
+    @property
+    def has_loaded_documents(self) -> bool:
+        """Check if documents have been loaded."""
+        return self._vector_store is not None
