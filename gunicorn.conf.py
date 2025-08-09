@@ -10,7 +10,8 @@ backlog = 2048
 workers = int(os.getenv('WEB_CONCURRENCY', '1'))
 worker_class = "uvicorn.workers.UvicornWorker"
 worker_connections = 1000
-timeout = 30
+# Increased to accommodate PDF downloads + embedding + LLM calls
+timeout = int(os.getenv('GUNICORN_TIMEOUT', '90'))
 keepalive = 2
 
 # Restart workers after this many requests, to prevent memory leaks
@@ -26,7 +27,8 @@ errorlog = "-"
 proc_name = 'policy-query-api'
 
 # Server mechanics
-preload_app = True
+# Disable preloading so first heavy request has full timeout window
+preload_app = False
 daemon = False
 pidfile = '/tmp/gunicorn.pid'
 user = None
