@@ -23,6 +23,9 @@ class PolicyQueryWorkflow:
         if api_keys is None:
             api_keys_str = os.getenv('GOOGLE_API_KEYS')
             if api_keys_str:
+                api_keys = [k.strip() for k in api_keys_str.split(",") if k.strip()]
+                print(f"Loaded {len(api_keys)} API keys from environment")
+            if api_keys_str:
                 try:
                     parsed_keys = json.loads(api_keys_str)
                     api_keys = [key for key in parsed_keys if key and key.strip()]
