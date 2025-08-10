@@ -1,5 +1,7 @@
 """LangGraph workflow for policy question answering."""
 
+import time
+import logging
 from typing import List, TypedDict, Annotated
 import os
 import json
@@ -16,6 +18,7 @@ class PolicyQueryWorkflow:
     """Handles the LangGraph workflow for policy question answering."""
     
     def __init__(self, api_keys: List[str] = None, model_name: str = "gemini-2.5-flash"):
+        self.logger = logging.getLogger(__name__)
         # Load environment variables
         load_dotenv()
         
@@ -70,7 +73,7 @@ class PolicyQueryWorkflow:
         # Recreate the graphs with the new vector store
         self.graphs = [self._create_graph(i) for i in range(len(self.models))]
     
-    def answer_questions(self, questions: List[str]) -> List[str]:
+    def answer_questions(self, questions: List[str], request_id: str = "unknown") -> List[str]:
         """Answer multiple questions using parallel processing with multiple API keys."""
         if self.vector_store is None:
             raise ValueError("Vector store not set. Please call set_vector_store() first.")
@@ -91,24 +94,31 @@ class PolicyQueryWorkflow:
             for idx, question in enumerate(questions):
                 # Assign API key/model index based on round-robin
                 model_idx = idx % len(self.models)
-                future = executor.submit(self._process_single_question, question, model_idx)
+                future = executor.submit(self._process_single_question, question, model_idx, idx, request_id)
                 future_to_index[future] = idx
             
             # Collect results as they complete
+            completed_count = 0
             for future in as_completed(future_to_index):
                 idx = future_to_index[future]
+                completed_count += 1
                 try:
                     answer = future.result()
                     results[idx] = answer
+                    print(f"  Q{idx+1} completed ({completed_count}/{len(questions)})")
                 except Exception as e:
-                    results[idx] = f"Unable to process query due to error: {e}. Please verify the policy documents and try again."
+                    error_msg = f"Unable to process query due to error: {e}. Please verify the policy documents and try again."
+                    results[idx] = error_msg
+                    print(f"  Q{idx+1} failed ({completed_count}/{len(questions)}): {e}")
         
         # Return results in original order
         return [results[i] for i in range(len(questions))]
     
-    def _process_single_question(self, question: str, model_idx: int) -> str:
+    def _process_single_question(self, question: str, model_idx: int, question_idx: int, request_id: str) -> str:
         """Process a single question using the specified model index."""
-        try:
+        start_time = time.perf_counter()
+        
+        try:            
             # Initialize state with the question
             initial_state = {
                 "messages": [HumanMessage(content=question)],
@@ -116,19 +126,27 @@ class PolicyQueryWorkflow:
             }
             
             # Run the workflow with the assigned graph
+            workflow_start = time.perf_counter()
             final_state = self.graphs[model_idx].invoke(initial_state)
+            workflow_time = time.perf_counter() - workflow_start
             
             # Extract answer from final message
             if final_state["messages"]:
                 last_message = final_state["messages"][-1]
                 if isinstance(last_message, AIMessage):
-                    return last_message.content or "Unable to generate answer."
+                    answer = last_message.content or "Unable to generate answer."
                 else:
-                    return "Unable to generate answer."
+                    answer = "Unable to generate answer."
             else:
-                return "Unable to generate answer."
+                answer = "Unable to generate answer."
+            
+            # Record timing
+            total_time = time.perf_counter() - start_time
+            
+            return answer
                 
         except Exception as e:
+            total_time = time.perf_counter() - start_time
             raise e  # Re-raise to be caught by the caller
     
     def _create_graph(self, model_idx: int):
@@ -149,6 +167,7 @@ class PolicyQueryWorkflow:
     
     def _context_retriever(self, state: 'State') -> 'State':
         """Node 1: Retrieve relevant context from policy documents using the original query."""
+        start_time = time.perf_counter()
         messages = state["messages"]
         original_query = messages[-1].content if messages else ""
         
@@ -156,14 +175,19 @@ class PolicyQueryWorkflow:
             retrieved_text = "Vector store not loaded. Please load documents first."
         else:
             try:
-                docs = self.vector_store.similarity_search(original_query, k=5)
+                self.logger.debug(f"[CONTEXT] Retrieving context for: {original_query[:50]}...")
+                docs = self.vector_store.similarity_search(original_query, k=4)
                 formatted = []
                 for i, d in enumerate(docs, 1):
                     src = d.metadata.get("source_url") or d.metadata.get("source_file") or "unknown"
                     formatted.append(f"Clause {i} (Source: {src}):\n{d.page_content}")
                 retrieved_text = "\n\n".join(formatted) if formatted else "No relevant clauses found."
+                
+                elapsed = time.perf_counter() - start_time
+                self.logger.debug(f"[CONTEXT_DONE] Context retrieval completed in {elapsed:.4f}s, found {len(docs)} relevant clauses")
             except Exception as e:
                 retrieved_text = f"Error retrieving clauses: {e}"
+                self.logger.error(f"[CONTEXT_ERROR] Context retrieval failed: {e}")
         
         return {
             **state,
@@ -172,25 +196,33 @@ class PolicyQueryWorkflow:
     
     def _answering_llm(self, state: 'State', model_idx: int) -> 'State':
         """Node 2: LLM that answers using the retrieved context."""
+        start_time = time.perf_counter()
         original_query = state["messages"][0].content if state["messages"] else ""
         retrieved_text = state.get("retrieved_text", "")
         
+        self.logger.debug(f"[LLM] Generating answer with Model-{model_idx}")
+        
         instructions = f"""
-        You are an expert AI assistant for insurance policy analysis. Answer the user's question using only the provided context from policy documents.
+        You are an expert AI assistant for insurance policy analysis.
         
         Context:
         {retrieved_text}
         
         Instructions:
-        - Base your answer strictly on the context; no outside facts or assumptions.
-        - Do not elaborate or add, provide the answer using policy terms and context also keep it consise and crisp (1-2 sentences)
+        - Only answer using facts from provided context, no outside facts or assumptions.
+        - Do not elaborate or add, keep it consise and crisp (1-2 sentences)
         - If the answer is missing, say: "Not specified in the provided policy context."
         """
         
         system_message = SystemMessage(content=instructions)
         user_message = HumanMessage(content=f"Question: {original_query}")
         
+        llm_start = time.perf_counter()
         response = self.models[model_idx].invoke([system_message, user_message])
+        llm_time = time.perf_counter() - llm_start
+        
+        total_time = time.perf_counter() - start_time
+        self.logger.debug(f"[LLM_DONE] LLM response generated in {llm_time:.4f}s (total step: {total_time:.4f}s)")
         
         return {
             **state,

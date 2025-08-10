@@ -1,6 +1,8 @@
 """Document loading and processing utilities."""
 
 import os
+import time
+import logging
 import tempfile
 import requests
 from typing import List
@@ -15,51 +17,57 @@ class DocumentProcessor:
     """Handles document loading and vectorstore creation."""
     
     def __init__(self):
-        self.embeddings = GoogleGenerativeAIEmbeddings(model="models/embedding-001")
+        self.logger = logging.getLogger(__name__)
+        self.embeddings = GoogleGenerativeAIEmbeddings(model="models/text-embedding-004")
         self.text_splitter = RecursiveCharacterTextSplitter(
-            chunk_size=2000,
-            chunk_overlap=150,
+            chunk_size=1500,
+            chunk_overlap=250,
             length_function=len,
             separators=["\n\n", "\n", " ", ""]
         )
     
-    def create_vectorstore_from_urls(self, urls: List[str]) -> FAISS:
+    def create_vectorstore_from_urls(self, urls: List[str], request_id: str = "unknown") -> FAISS:
         """
         Create a FAISS vectorstore from a list of URLs.
         Downloads documents from URLs, processes them, and returns a vectorstore.
         """
         all_documents = []
         
-        for url in urls:
+        for idx, url in enumerate(urls):
             try:
-                print(f"Processing URL: {url}")
-                documents = self._load_document_from_url(url)
+                documents = self._load_document_from_url(url, request_id)
                 all_documents.extend(documents)
+                print(f"  URL {idx+1}/{len(urls)} loaded ({len(documents)} pages)")
             except Exception as e:
-                print(f"Error processing URL {url}: {e}")
+                print(f"  ERROR loading URL {idx+1}: {e}")
                 continue
         
         if not all_documents:
             raise ValueError("No documents could be loaded from the provided URLs")
         
         # Split documents into chunks
+        print(f"  Splitting {len(all_documents)} pages into chunks...")
         splits = self.text_splitter.split_documents(all_documents)
+        print(f"  Created {len(splits)} chunks")
         
         # Create vectorstore
+        print("  Creating embeddings...")
         vectorstore = FAISS.from_documents(splits, self.embeddings)
-        print(f"Created vectorstore with {len(splits)} document chunks from {len(urls)} URLs")
         
         return vectorstore
     
-    def _load_document_from_url(self, url: str) -> List[Document]:
+    def _load_document_from_url(self, url: str, request_id: str = "unknown") -> List[Document]:
         """
         Load a document from a URL. Currently supports PDF files.
         Downloads the file temporarily and processes it.
         """
         try:
             # Download the file
+            download_start = time.perf_counter()
+            self.logger.debug(f"[DOWNLOAD] [REQ-{request_id}] Downloading document from {url}")
             response = requests.get(url, stream=True, timeout=30)
             response.raise_for_status()
+            download_time = time.perf_counter() - download_start
             
             # Create a temporary file
             with tempfile.NamedTemporaryFile(delete=False, suffix='.pdf') as temp_file:
@@ -69,8 +77,11 @@ class DocumentProcessor:
             
             try:
                 # Load the document using PyPDFLoader
+                parse_start = time.perf_counter()
+                self.logger.debug(f"[PARSE] [REQ-{request_id}] Parsing PDF document")
                 loader = PyPDFLoader(temp_file_path)
                 documents = loader.load()
+                parse_time = time.perf_counter() - parse_start
                 
                 # Add URL metadata to each document
                 for doc in documents:
@@ -79,6 +90,7 @@ class DocumentProcessor:
                         "file_type": ".pdf"
                     })
                 
+                self.logger.debug(f"[PARSE_DONE] [REQ-{request_id}] Document loaded: Download={download_time:.4f}s, Parse={parse_time:.4f}s, Pages={len(documents)}")
                 return documents
             
             finally:
@@ -87,5 +99,5 @@ class DocumentProcessor:
                     os.unlink(temp_file_path)
                     
         except Exception as e:
-            print(f"Error loading document from URL {url}: {e}")
+            self.logger.error(f"[LOAD_ERROR] [REQ-{request_id}] Error loading document from URL {url}: {e}")
             return []
